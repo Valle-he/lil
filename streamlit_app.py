@@ -27,7 +27,25 @@ def get_portfolio_data():
             "investment_amount": investment_amount
         })
     
-    return portfolio
+    if st.sidebar.button("Daten abrufen und berechnen"):
+        portfolio = fetch_historical_data(portfolio)
+        total_value, portfolio_return, portfolio_volatility, current_volatility, portfolio_values = calculate_portfolio_value(portfolio)
+
+        st.sidebar.write(f"Total Portfolio Value: {total_value}")
+        st.sidebar.write(f"Portfolio Return: {portfolio_return * 100:.2f}%")
+        st.sidebar.write(f"Average Portfolio Volatility: {portfolio_volatility * 100:.2f}%")
+        st.sidebar.write(f"Current Portfolio Volatility: {current_volatility * 100:.2f}%")
+
+        expected_return, sharpe_ratio = calculate_sharpe_ratio(portfolio)
+
+        if expected_return is not None:
+            st.sidebar.write(f"Expected Return (p.a.): {expected_return * 100:.2f}%")
+            st.sidebar.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
+        else:
+            st.sidebar.write("Es gab einen Fehler bei der Berechnung der Metriken.")
+
+        plot_portfolio_performance(portfolio_values)
+        plot_asset_allocation(portfolio)
 
 # Historische Daten abrufen
 def fetch_historical_data(portfolio):
@@ -103,7 +121,7 @@ def calculate_sharpe_ratio(portfolio):
         ten_year_treasury_rate = fred.get_series_latest_release('GS10') / 100
         risk_free_rate = ten_year_treasury_rate.iloc[-1]
     except Exception as e:
-        st.write(f"Error fetching risk-free rate: {str(e)}")
+        st.sidebar.write(f"Error fetching risk-free rate: {str(e)}")
         return None
 
     num_assets = len(tickers)
@@ -131,32 +149,10 @@ def plot_asset_allocation(portfolio):
 
 # Streamlit App
 
-# Seitenleiste für die Eingabe der Portfolio-Daten
+# Seitenleiste für die Eingabe der Portfolio-Daten und "Berechnen" Button
 st.sidebar.title("Portfolio Management App")
-portfolio = get_portfolio_data()
+get_portfolio_data()
 
-# Hauptseite für die Berechnungen und Visualisierungen
-st.title("Portfolio Performance")
-
-if st.button("Daten abrufen und berechnen"):
-    portfolio = fetch_historical_data(portfolio)
-    total_value, portfolio_return, portfolio_volatility, current_volatility, portfolio_values = calculate_portfolio_value(portfolio)
-
-    st.write(f"Total Portfolio Value: {total_value}")
-    st.write(f"Portfolio Return: {portfolio_return * 100:.2f}%")
-    st.write(f"Average Portfolio Volatility: {portfolio_volatility * 100:.2f}%")
-    st.write(f"Current Portfolio Volatility: {current_volatility * 100:.2f}%")
-
-    expected_return, sharpe_ratio = calculate_sharpe_ratio(portfolio)
-
-    if expected_return is not None:
-        st.write(f"Expected Return (p.a.): {expected_return * 100:.2f}%")
-        st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
-    else:
-        st.write("Es gab einen Fehler bei der Berechnung der Metriken.")
-
-    plot_portfolio_performance(portfolio_values)
-    plot_asset_allocation(portfolio)
 
 
 

@@ -29,7 +29,7 @@ def get_portfolio_data():
     
     if st.sidebar.button("Daten abrufen und berechnen"):
         portfolio = fetch_historical_data(portfolio)
-        total_value, portfolio_return, portfolio_unrealized, portfolio_volatility, average_volatility, sharpe_ratio, expected_return, portfolio_values = calculate_portfolio_metrics(portfolio)
+        total_value, portfolio_return, total_unrealized, current_volatility, average_volatility, sharpe_ratio, expected_return, portfolio_values = calculate_portfolio_metrics(portfolio)
 
         # Ergebnisse auf der Hauptseite anzeigen
         st.header("Portfolio Performance Metrics")
@@ -37,7 +37,7 @@ def get_portfolio_data():
         st.markdown("---")
         st.write(f"**Total Portfolio Value:** ${total_value:,.2f}")
         st.write(f"**Portfolio Return:** {portfolio_return * 100:.2f}%")
-        st.write(f"**Unrealized Gains/Losses:** ${portfolio_unrealized:,.2f}")
+        st.write(f"**Unrealized Gains/Losses:** ${total_unrealized:,.2f}")
         st.write(f"**Current Portfolio Volatility:** {current_volatility * 100:.2f}%")
         st.write(f"**Average Portfolio Volatility:** {average_volatility * 100:.2f}%")
         st.write(f"**Portfolio Sharpe Ratio:** {sharpe_ratio:.2f}")
@@ -151,6 +151,7 @@ def plot_asset_allocation(portfolio):
 # Seitenleiste für die Eingabe der Portfolio-Daten und "Berechnen" Button
 st.sidebar.title("Portfolio Management App")
 get_portfolio_data()
+
 
 
 

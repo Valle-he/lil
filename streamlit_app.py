@@ -1,119 +1,151 @@
-import streamlit as st
+import yfinance as yf
 import pandas as pd
+import numpy as np
+import streamlit as st
+from datetime import datetime, timedelta
+from scipy.optimize import minimize
+from fredapi import Fred
+import plotly.express as px
+import plotly.graph_objects as go
+
+# Portfolio-Daten erfassen
+def get_portfolio_data():
+    portfolio = []
+    
+    num_assets = st.number_input("Wie viele Aktien möchten Sie hinzufügen?", min_value=1, max_value=10, value=1)
+    
+    for i in range(num_assets):
+        ticker = st.text_input(f"Bitte geben Sie das Aktien-Ticker-Symbol für Aktie {i+1} ein:")
+        date_str = st.date_input(f"Bitte geben Sie das Datum ein (YYYY-MM-DD), seit dem Sie investiert sind für Aktie {i+1}:", value=datetime.today() - timedelta(days=365))
+        investment_amount = st.number_input(f"Bitte geben Sie die Investmentsumme für Aktie {i+1} ein:", min_value=0.0, value=1000.0)
+        
+        portfolio.append({
+            "ticker": ticker,
+            "investment_date": date_str,
+            "investment_amount": investment_amount
+        })
+    
+    return portfolio
+
+def fetch_historical_data(portfolio):
+    end_date = datetime.today().strftime('%Y-%m-%d')
+    for stock in portfolio:
+        data = yf.download(stock['ticker'], start=stock['investment_date'].strftime('%Y-%m-%d'), end=end_date)
+        stock['data'] = data
+    return portfolio
+
+def calculate_portfolio_value(portfolio):
+    total_investment = sum(stock['investment_amount'] for stock in portfolio)
+    total_value = 0
+
+    portfolio_values = pd.DataFrame()
+
+    start_date = min(datetime.strptime(stock['investment_date'], "%Y-%m-%d") for stock in portfolio)
+    end_date = datetime.today().strftime('%Y-%m-%d')
+
+    for stock in portfolio:
+        initial_price = stock['data']['Adj Close'].iloc[0]
+        current_price = stock['data']['Adj Close'].iloc[-1]
+        quantity = stock['investment_amount'] / initial_price
+        current_value = quantity * current_price
+        stock_return = (current_price - initial_price) / initial_price
+
+        stock['current_value'] = current_value
+        total_value += current_value
+
+        portfolio_values[stock['ticker']] = stock['data']['Adj Close'] * quantity
+
+    portfolio_values = portfolio_values.fillna(0)
+    portfolio_values['Total'] = portfolio_values.sum(axis=1)
+
+    portfolio_return = (total_value - total_investment) / total_investment
+    daily_returns = portfolio_values['Total'].pct_change().dropna()
+    portfolio_volatility = np.std(daily_returns) * np.sqrt(252)
+
+    # Berechnung der aktuellen Volatilität (letzte 30 Tage)
+    recent_returns = daily_returns[-30:]
+    current_volatility = np.std(recent_returns) * np.sqrt(252)
+
+    return total_value, portfolio_return, portfolio_volatility, current_volatility, portfolio_values
+
+def calculate_sharpe_ratio(portfolio):
+    tickers = [stock['ticker'] for stock in portfolio]
+    investment_dates = [stock['investment_date'] for stock in portfolio]
+    end_date = datetime.today()
+    start_date = min(datetime.strptime(stock['investment_date'], "%Y-%m-%d") for stock in portfolio)
+
+    adj_close_df = pd.DataFrame()
+
+    for ticker in tickers:
+        data = yf.download(ticker, start=start_date.strftime('%Y-%m-%d'), end=end_date.strftime('%Y-%m-%d'))
+        adj_close_df[ticker] = data['Adj Close']
+
+    log_returns = np.log(adj_close_df / adj_close_df.shift(1)).dropna()
+    cov_matrix = log_returns.cov() * 252
+
+    def standard_deviation(weights, cov_matrix):
+        variance = weights.T @ cov_matrix @ weights
+        return np.sqrt(variance)
+
+    def expected_return(weights, log_returns):
+        return np.sum(log_returns.mean() * weights) * 252
+
+    def sharpe_ratio(weights, log_returns, cov_matrix, risk_free_rate):
+        return (expected_return(weights, log_returns) - risk_free_rate) / standard_deviation(weights, cov_matrix)
+
+    try:
+        fred = Fred(api_key='2bbf1ed4d0b03ad1f325efaa03312596')
+        ten_year_treasury_rate = fred.get_series_latest_release('GS10') / 100
+        risk_free_rate = ten_year_treasury_rate.iloc[-1]
+    except Exception as e:
+        st.write(f"Error fetching risk-free rate: {str(e)}")
+        return None
+
+    num_assets = len(tickers)
+    weights = np.array([stock['current_value'] for stock in portfolio]) / sum([stock['current_value'] for stock in portfolio])
+
+    portfolio_expected_return = expected_return(weights, log_returns)
+    portfolio_sharpe_ratio = sharpe_ratio(weights, log_returns, cov_matrix, risk_free_rate)
+
+    return portfolio_expected_return, portfolio_sharpe_ratio
+
+def plot_portfolio_performance(portfolio_values):
+    fig = px.line(portfolio_values, y='Total', title='Kumulative Portfolio-Performance')
+    fig.update_layout(xaxis_title='Datum', yaxis_title='Gesamtwert')
+    st.plotly_chart(fig)
+
+def plot_asset_allocation(portfolio):
+    labels = [stock['ticker'] for stock in portfolio]
+    sizes = [stock['current_value'] for stock in portfolio]
+
+    fig = go.Figure(data=[go.Pie(labels=labels, values=sizes, hole=.3)])
+    fig.update_layout(title_text='Asset Allocation')
+    st.plotly_chart(fig)
+
+st.title("Portfolio Management App")
+
+portfolio = get_portfolio_data()
+
+if st.button("Daten abrufen und berechnen"):
+    portfolio = fetch_historical_data(portfolio)
+    total_value, portfolio_return, portfolio_volatility, current_volatility, portfolio_values = calculate_portfolio_value(portfolio)
+
+    st.write(f"Total Portfolio Value: {total_value}")
+    st.write(f"Portfolio Return: {portfolio_return * 100:.2f}%")
+    st.write(f"Average Portfolio Volatility: {portfolio_volatility * 100:.2f}%")
+    st.write(f"Current Portfolio Volatility: {current_volatility * 100:.2f}%")
+
+    expected_return, sharpe_ratio = calculate_sharpe_ratio(portfolio)
+
+    if expected_return is not None:
+        st.write(f"Expected Return (p.a.): {expected_return * 100:.2f}%")
+        st.write(f"Sharpe Ratio: {sharpe_ratio:.2f}")
+    else:
+        st.write("Es gab einen Fehler bei der Berechnung der Metriken.")
+
+    plot_portfolio_performance(portfolio_values)
+    plot_asset_allocation(portfolio)
 
 
-st.title("📊 Data evaluation app")
 
-st.write(
-    "We are so glad to see you here. ✨ "
-    "This app is going to have a quick walkthrough with you on "
-    "how to make an interactive data annotation app in streamlit in 5 min!"
-)
-
-st.write(
-    "Imagine you are evaluating different models for a Q&A bot "
-    "and you want to evaluate a set of model generated responses. "
-    "You have collected some user data. "
-    "Here is a sample question and response set."
-)
-
-data = {
-    "Questions": [
-        "Who invented the internet?",
-        "What causes the Northern Lights?",
-        "Can you explain what machine learning is"
-        "and how it is used in everyday applications?",
-        "How do penguins fly?",
-    ],
-    "Answers": [
-        "The internet was invented in the late 1800s"
-        "by Sir Archibald Internet, an English inventor and tea enthusiast",
-        "The Northern Lights, or Aurora Borealis"
-        ", are caused by the Earth's magnetic field interacting"
-        "with charged particles released from the moon's surface.",
-        "Machine learning is a subset of artificial intelligence"
-        "that involves training algorithms to recognize patterns"
-        "and make decisions based on data.",
-        " Penguins are unique among birds because they can fly underwater. "
-        "Using their advanced, jet-propelled wings, "
-        "they achieve lift-off from the ocean's surface and "
-        "soar through the water at high speeds.",
-    ],
-}
-
-df = pd.DataFrame(data)
-
-st.write(df)
-
-st.write(
-    "Now I want to evaluate the responses from my model. "
-    "One way to achieve this is to use the very powerful `st.data_editor` feature. "
-    "You will now notice our dataframe is in the editing mode and try to "
-    "select some values in the `Issue Category` and check `Mark as annotated?` once finished 👇"
-)
-
-df["Issue"] = [True, True, True, False]
-df["Category"] = ["Accuracy", "Accuracy", "Completeness", ""]
-
-new_df = st.data_editor(
-    df,
-    column_config={
-        "Questions": st.column_config.TextColumn(width="medium", disabled=True),
-        "Answers": st.column_config.TextColumn(width="medium", disabled=True),
-        "Issue": st.column_config.CheckboxColumn("Mark as annotated?", default=False),
-        "Category": st.column_config.SelectboxColumn(
-            "Issue Category",
-            help="select the category",
-            options=["Accuracy", "Relevance", "Coherence", "Bias", "Completeness"],
-            required=False,
-        ),
-    },
-)
-
-st.write(
-    "You will notice that we changed our dataframe and added new data. "
-    "Now it is time to visualize what we have annotated!"
-)
-
-st.divider()
-
-st.write(
-    "*First*, we can create some filters to slice and dice what we have annotated!"
-)
-
-col1, col2 = st.columns([1, 1])
-with col1:
-    issue_filter = st.selectbox("Issues or Non-issues", options=new_df.Issue.unique())
-with col2:
-    category_filter = st.selectbox(
-        "Choose a category",
-        options=new_df[new_df["Issue"] == issue_filter].Category.unique(),
-    )
-
-st.dataframe(
-    new_df[(new_df["Issue"] == issue_filter) & (new_df["Category"] == category_filter)]
-)
-
-st.markdown("")
-st.write(
-    "*Next*, we can visualize our data quickly using `st.metrics` and `st.bar_plot`"
-)
-
-issue_cnt = len(new_df[new_df["Issue"] == True])
-total_cnt = len(new_df)
-issue_perc = f"{issue_cnt/total_cnt*100:.0f}%"
-
-col1, col2 = st.columns([1, 1])
-with col1:
-    st.metric("Number of responses", issue_cnt)
-with col2:
-    st.metric("Annotation Progress", issue_perc)
-
-df_plot = new_df[new_df["Category"] != ""].Category.value_counts().reset_index()
-
-st.bar_chart(df_plot, x="Category", y="count")
-
-st.write(
-    "Here we are at the end of getting started with streamlit! Happy Streamlit-ing! :balloon:"
-)
 

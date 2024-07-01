@@ -8,16 +8,18 @@ from fredapi import Fred
 import plotly.express as px
 import plotly.graph_objects as go
 
-# Portfolio-Daten erfassen
+# Funktionen für die Streamlit-App
+
+# Portfolio-Daten erfassen (in Seitenleiste)
 def get_portfolio_data():
     portfolio = []
     
-    num_assets = st.number_input("Wie viele Aktien möchten Sie hinzufügen?", min_value=1, max_value=10, value=1)
+    num_assets = st.sidebar.number_input("Wie viele Aktien möchten Sie hinzufügen?", min_value=1, max_value=10, value=1)
     
     for i in range(num_assets):
-        ticker = st.text_input(f"Bitte geben Sie das Aktien-Ticker-Symbol für Aktie {i+1} ein:")
-        date_str = st.date_input(f"Bitte geben Sie das Datum ein (YYYY-MM-DD), seit dem Sie investiert sind für Aktie {i+1}:", value=datetime.today() - timedelta(days=365))
-        investment_amount = st.number_input(f"Bitte geben Sie die Investmentsumme für Aktie {i+1} ein:", min_value=0.0, value=1000.0)
+        ticker = st.sidebar.text_input(f"Bitte geben Sie das Aktien-Ticker-Symbol für Aktie {i+1} ein:")
+        date_str = st.sidebar.date_input(f"Bitte geben Sie das Datum ein (YYYY-MM-DD), seit dem Sie investiert sind für Aktie {i+1}:", value=datetime.today() - timedelta(days=365))
+        investment_amount = st.sidebar.number_input(f"Bitte geben Sie die Investmentsumme für Aktie {i+1} ein:", min_value=0.0, value=1000.0)
         
         portfolio.append({
             "ticker": ticker,
@@ -27,6 +29,7 @@ def get_portfolio_data():
     
     return portfolio
 
+# Historische Daten abrufen
 def fetch_historical_data(portfolio):
     end_date = datetime.today().strftime('%Y-%m-%d')
     for stock in portfolio:
@@ -34,13 +37,14 @@ def fetch_historical_data(portfolio):
         stock['data'] = data
     return portfolio
 
+# Portfolio-Wert und Performance berechnen
 def calculate_portfolio_value(portfolio):
     total_investment = sum(stock['investment_amount'] for stock in portfolio)
     total_value = 0
 
     portfolio_values = pd.DataFrame()
 
-    start_date = min(datetime.strptime(stock['investment_date'], "%Y-%m-%d") for stock in portfolio)
+    start_date = min(datetime.strptime(stock['investment_date'].strftime('%Y-%m-%d'), "%Y-%m-%d") for stock in portfolio)
     end_date = datetime.today().strftime('%Y-%m-%d')
 
     for stock in portfolio:
@@ -68,11 +72,12 @@ def calculate_portfolio_value(portfolio):
 
     return total_value, portfolio_return, portfolio_volatility, current_volatility, portfolio_values
 
+# Sharpe Ratio berechnen
 def calculate_sharpe_ratio(portfolio):
     tickers = [stock['ticker'] for stock in portfolio]
     investment_dates = [stock['investment_date'] for stock in portfolio]
     end_date = datetime.today()
-    start_date = min(datetime.strptime(stock['investment_date'], "%Y-%m-%d") for stock in portfolio)
+    start_date = min(datetime.strptime(stock['investment_date'].strftime('%Y-%m-%d'), "%Y-%m-%d") for stock in portfolio)
 
     adj_close_df = pd.DataFrame()
 
@@ -109,11 +114,13 @@ def calculate_sharpe_ratio(portfolio):
 
     return portfolio_expected_return, portfolio_sharpe_ratio
 
+# Grafische Darstellung der Portfolio-Performance
 def plot_portfolio_performance(portfolio_values):
     fig = px.line(portfolio_values, y='Total', title='Kumulative Portfolio-Performance')
     fig.update_layout(xaxis_title='Datum', yaxis_title='Gesamtwert')
     st.plotly_chart(fig)
 
+# Grafische Darstellung der Asset-Allokation
 def plot_asset_allocation(portfolio):
     labels = [stock['ticker'] for stock in portfolio]
     sizes = [stock['current_value'] for stock in portfolio]
@@ -122,9 +129,14 @@ def plot_asset_allocation(portfolio):
     fig.update_layout(title_text='Asset Allocation')
     st.plotly_chart(fig)
 
-st.title("Portfolio Management App")
+# Streamlit App
 
+# Seitenleiste für die Eingabe der Portfolio-Daten
+st.sidebar.title("Portfolio Management App")
 portfolio = get_portfolio_data()
+
+# Hauptseite für die Berechnungen und Visualisierungen
+st.title("Portfolio Performance")
 
 if st.button("Daten abrufen und berechnen"):
     portfolio = fetch_historical_data(portfolio)
@@ -145,6 +157,7 @@ if st.button("Daten abrufen und berechnen"):
 
     plot_portfolio_performance(portfolio_values)
     plot_asset_allocation(portfolio)
+
 
 
 
